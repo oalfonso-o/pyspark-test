@@ -8,11 +8,7 @@ from pyspark_diff import diff_df
 
 
 def process(input_left, input_right, output):
-    spark = (
-        SparkSession.builder.config("spark.driver.memory", "8g")
-        .appName(__name__)
-        .getOrCreate()
-    )
+    spark = SparkSession.builder.appName(__name__).getOrCreate()
 
     left_df = spark.read.json(input_left)
     right_df = spark.read.json(input_right)

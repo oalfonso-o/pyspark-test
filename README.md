@@ -54,17 +54,53 @@ The nested fields are flattened following this system:
 - arrays -> will have the name of the field + [array_index]. For example: `artists[0]`
 - structs -> will have the name of the field + double underscore + the name of the key. For example: `artist__name`
 
-Then we can use this data as we wish, in the `examples/example.py` we are adding the original row and formatting the column names for a custom csv output. Example:
+Then we can use this data as we wish, in the `examples/example1.py` we are adding the original row and formatting the column names for a custom csv output. Example:
 ```
-python examples/example.py -l /tmp/data1.json -r /tmp/data2.json -o differences.csv
+python examples/example1.py -l /tmp/data1.json -r /tmp/data2.json -o differences.csv
 ```
-Running this example.py we will get the dataframe, parse the output and write a new csv with the differences which will look like this:
+Running this example1.py we will get the dataframe, parse the output and write a new csv with the differences which will look like this:
 |id |diff|key           |left_value|right_value|left                                                           |right                                                              |
 |---|----|--------------|----------|-----------|---------------------------------------------------------------|-------------------------------------------------------------------|
 |2  |C   |values_list[1]|b         |bdiff      |{"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "b"]}|{"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "bdiff"]}|
 |3  |C   |values_dict__a|b         |bdiff      |{"id": 3, "values_dict": {"a": "b"}, "values_list": ["a", "b"]}|{"id": 3, "values_dict": {"a": "bdiff"}, "values_list": ["a", "b"]}|
 
 The output informs the ID of the row that contains a difference, also which is the key (useful for highly nested data models), value in each field and also the original row for debugging.
+
+You can run also `examples/example2.py` which doesn't requires any input file but processes 1m rows in each sample dataframe:
+```
+python examples/example2.py
+```
+And you will see:
+```
++----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
+|diff|             changes|    id|left_list[0]|right_list[0]|left_list[1]|right_list[1]|left_cpg1__cpg2|right_cpg1__cpg2|left_cpg1__cpg3__cpg4[1]__cpg5|right_cpg1__cpg3__cpg4[1]__cpg5|left_cpg1__cpg3__cpg4[0]__cpg5|right_cpg1__cpg3__cpg4[0]__cpg5|
++----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
+|   C|[cpg1__cpg3__cpg4...|  1000|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...| 10000|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100005|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...| 10001|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100011|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100032|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100033|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100034|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100041|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100052|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100058|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100059|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100065|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100073|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100077|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100104|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100105|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100117|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100118|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
+|   C|[cpg1__cpg3__cpg4...|100122|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
++----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
+only showing top 20 rows
+```
+There's one difference in each row, which is the same for all rows.
+
+
 ## diff_objs
 Returns a list of differences between two PySpark dataframes.
 

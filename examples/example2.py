@@ -62,6 +62,6 @@ left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
 
-df = diff_df(left_df, right_df, id_field="id", spark_process=True)
+df = diff_df(left_df, right_df, id_field="id")
 
 df.show()
