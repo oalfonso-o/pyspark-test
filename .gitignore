@@ -13,3 +13,4 @@ venv
 dist/
 site-packages
 *.csv
+.~lock.*
