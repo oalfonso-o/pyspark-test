@@ -1,4 +1,4 @@
-from .pyspark_diff import diff_df, diff_objs
+from .pyspark_diff import diff, diff_objs
 from .models import Difference
 
-__all__ = ["diff_df", "diff_objs", "Difference"]
+__all__ = ["diff", "diff_objs", "Difference"]

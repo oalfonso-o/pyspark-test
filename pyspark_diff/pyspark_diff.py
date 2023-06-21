@@ -1,10 +1,8 @@
 import logging
-import uuid
-
+import flatdict
 from gresearch.spark.diff import DiffOptions, diff_with_options
 import pyspark
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, ArrayType
 from pyspark.sql import DataFrame
 
 from pyspark_diff.models import Difference
@@ -278,114 +276,72 @@ class WithoutSpark:
 
 
 class WithSpark:
-    NESTED_FIELDS_SEP = "__"
+    NESTED_FIELDS_SEP = "."
+    DIFF_COL_NAME = "diff"
+    CHANGES_COL_NAME = "changes"
 
     @classmethod
-    def diff_df_content(
+    def diff(
         cls,
         left_df: pyspark.sql.DataFrame,
         right_df: pyspark.sql.DataFrame,
-        id_field: str,
-        order_by: list = None,
+        id_fields: list,
+        order_by_ids: bool = True,
         columns: list = None,
-        sorting_keys: dict = None,
     ) -> DataFrame:
-        if id_field not in left_df.columns or id_field not in left_df.columns:
-            raise ValueError(f"id_field {id_field} not present in the input dataframes")
+        for id_field in id_fields:
+            if id_field not in left_df.columns or id_field not in left_df.columns:
+                raise ValueError(
+                    f"id_field {id_field} not present in the input dataframes"
+                )
 
-        # avoid ambiguous id cases with a tmp unique id col name
-        unique_id_field = uuid.uuid4().hex
-        left_df = left_df.withColumnRenamed(id_field, unique_id_field)
-        right_df = right_df.withColumnRenamed(id_field, unique_id_field)
+        logger.info("1. Flattening dataframes...")
+        flat_left_df = cls._flat_df(left_df)
+        flat_right_df = cls._flat_df(right_df)
 
-        # 1. Flatten
-        logger.info("Flattening dataframes...")
-        flat_left_df, flat_right_df = cls._flat_dfs(
-            left_df, right_df, id_field=unique_id_field
-        )
+        if order_by_ids:
+            flat_left_df = flat_left_df.orderBy(id_fields)
+            flat_right_df = flat_right_df.orderBy(id_fields)
 
-        flat_left_df = flat_left_df.withColumnRenamed(unique_id_field, id_field)
-        flat_right_df = flat_right_df.withColumnRenamed(unique_id_field, id_field)
+        left_cols = set(flat_left_df.columns)
+        right_cols = set(flat_right_df.columns)
+        if only_left_cols := left_cols - right_cols:
+            flat_right_df = flat_right_df.withColumns(
+                {c: F.lit(None) for c in only_left_cols}
+            )
+        if only_right_cols := right_cols - left_cols:
+            flat_left_df = flat_left_df.withColumns(
+                {c: F.lit(None) for c in only_right_cols}
+            )
+        import pudb
 
-        # 2. Compare
-        logger.info("Comparing dataframes...")
-        options = DiffOptions().with_change_column("changes")
+        pu.db
+        logger.info("2. Comparing dataframes...")
+        options = DiffOptions().with_change_column(cls.CHANGES_COL_NAME)
         diff_df = diff_with_options(
-            flat_left_df, flat_right_df, options, id_field
-        ).filter(F.col("diff") != DiffOptions.nochange_diff_value)
+            flat_left_df, flat_right_df, options, id_fields
+        ).filter(F.col(cls.DIFF_COL_NAME) != DiffOptions.nochange_diff_value)
 
         return diff_df
 
     @classmethod
-    def _flat_dfs(cls, left_df, right_df, id_field):
-        flattened = False
-        fields = set(left_df.schema.fields + right_df.schema.fields)
-        for field in fields:
-            if field.dataType.typeName() == StructType.typeName():
-                left_cols = cls._field_columns(left_df, field)
-                right_cols = cls._field_columns(right_df, field)
-
-                left_df = left_df.select("*", *left_cols.values()).drop(field.name)
-                right_df = right_df.select("*", *right_cols.values()).drop(field.name)
-
-                # add missing cols to keep schema symmetry
-                left_colnames = set(left_cols.keys())
-                right_colnames = set(right_cols.keys())
-                if left_colnames != right_colnames:
-                    if only_left_columns := left_colnames - right_colnames:
-                        right_df = right_df.withColumns(
-                            {
-                                # c: F.lit(None).cast(left_df.schema[c])
-                                c: F.lit(None)
-                                for c in only_left_columns
-                            }
-                        )
-                    if only_right_columns := right_colnames - left_colnames:
-                        left_df = left_df.withColumns(
-                            {
-                                # c: F.lit(None).cast(right_df.schema[c])
-                                c: F.lit(None)
-                                for c in only_right_columns
-                            }
-                        )
-
-                flattened = True
-
-            elif field.dataType.typeName() == ArrayType.typeName():
-                mx_left_len = (
-                    left_df.select(F.max(F.size(field.name)).alias("max"))
-                    .collect()[0]
-                    .max
-                )
-                mx_right_len = (
-                    right_df.select(F.max(F.size(field.name)).alias("max"))
-                    .collect()[0]
-                    .max
-                )
-                max_len = max(mx_left_len, mx_right_len)
-                left_df = left_df.select(
-                    "*",
-                    *[F.col(field.name)[i] for i in range(max_len)],
-                ).drop(field.name)
-                right_df = right_df.select(
-                    "*",
-                    *[F.col(field.name)[i] for i in range(max_len)],
-                ).drop(field.name)
-                flattened = True
-        if flattened:
-            left_df, right_df = cls._flat_dfs(left_df, right_df, id_field=id_field)
-        return left_df, right_df
-
-    @classmethod
-    def _field_columns(cls, df, field):
-        """Returns a dict where each key is the column name and the value is the pyspark column"""
-        cols = {}
-        if field.name in df.columns:
-            for column in df.select(F.col(f"{field.name}.*")).columns:
-                cols[column] = F.col(f"{field.name}.{column}").alias(
-                    f"{field.name}{cls.NESTED_FIELDS_SEP}{column}"
-                )
-        return cols
+    def _flat_df(cls, df):
+        rdd = df.rdd
+        rdd = rdd.map(
+            lambda row: dict(
+                flatdict.FlatterDict(row.asDict(recursive=True), cls.NESTED_FIELDS_SEP)
+            )
+        )
+        for sample_ratio in range(0, 10, 2):
+            sample_ratio = (sample_ratio + 2) / 10
+            try:
+                df = rdd.toDF(sampleRatio=sample_ratio)
+                break
+            except ValueError:
+                logger.warning(f"Couldn't infer schema with sampleRatio={sample_ratio}")
+        else:
+            raise ValueError("Couldn't infer schema to convert the RDD to DF")
+        return df
 
 
 def diff_objs(
@@ -470,40 +426,33 @@ def diff_objs(
     return differences
 
 
-def diff_df(
+def diff(
     left_df: pyspark.sql.DataFrame,
     right_df: pyspark.sql.DataFrame,
-    id_field: str = None,
+    id_fields: list,
+    order_by_ids: bool = True,
     columns: list = None,
-    order_by: list = None,
-    sorting_keys: dict = None,
 ) -> DataFrame:
     """
-    Used to test if two dataframes are same or not, returns a Dataframe with the differences
+    Used to check if two dataframes are same or not, returns a Dataframe with the differences
 
     Args:
-        left_df (pyspark.sql.DataFrame): Left Dataframe
-        right_df (pyspark.sql.DataFrame): Right Dataframe
-        id_field (str, optional): Name of the column that identifies the same row in both
-            dataframes. Used to identify the rows with differences. Defaults to None.
+        left_df (pyspark.sql.DataFrame): Left Dataframe. Required
+        right_df (pyspark.sql.DataFrame): Right Dataframe. Required
+        id_fields (list, optional): Name of the columns that identifies the same row in both
+            dataframes. Used to identify the rows with differences. Required
+        order_by_ids (bool, optional): Order the dataframes by the id_fields cols before comparing.
+            The order of the fields is the one provided in the id_fields param. Defaults to True.
         columns (list, optional): Compare only these columns. Defaults to None.
-        order_by (list, optional): Order the dataframes by these column names before comparing.
-            Defaults to None.
-        sorting_keys (dict, optional): Sort the values of specific columns if they are lists based
-            on the key provided.
-            Defaults to None.
 
     Returns:
-        a pyspark.sql.DataFrame
+        pyspark.sql.DataFrame with the differences
     """
 
-    diff_df = WithSpark.diff_df_content(
+    return WithSpark.diff(
         left_df=left_df,
         right_df=right_df,
-        id_field=id_field,
-        order_by=order_by,
+        id_fields=id_fields,
+        order_by_ids=order_by_ids,
         columns=columns,
-        sorting_keys=sorting_keys,
     )
-
-    return diff_df
