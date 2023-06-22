@@ -4,7 +4,7 @@ import json
 
 from pyspark.sql import SparkSession
 
-from pyspark_diff import diff_df
+from pyspark_diff import diff
 
 
 def process(input_left, input_right, output):
@@ -13,7 +13,7 @@ def process(input_left, input_right, output):
     left_df = spark.read.json(input_left)
     right_df = spark.read.json(input_right)
 
-    df = diff_df(left_df, right_df, id_field="id")
+    df = diff(left_df, right_df, id_fields=["id"])
 
     changes = []
     for row in df.collect():

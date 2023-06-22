@@ -63,4 +63,6 @@ right_df = spark.createDataFrame(data2, schema=schema)
 
 df = diff(left_df, right_df, id_fields=["id"])
 
-df.where("diff == 'D'").show()
+only_left_df = df.where("diff == 'D'")
+only_right_df = df.where("diff == 'I'")
+change_df = df.where("diff == 'C'")
