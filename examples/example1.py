@@ -32,29 +32,27 @@ def process(input_left, input_right, output):
 
     changes = []
     for row in rdd.collect():
-        print(row)
-        # for change in row["changes"]:
-        #     changes.append(
-        #         {
-        #             "id": row["id"],
-        #             "diff": row["diff"],
-        #             "key": change,
-        #             "left_value": row[f"left_{change}"],
-        #             "right_value": row[f"right_{change}"],
-        #             "left": json.dumps(
-        #                 left_df.select("*")
-        #                 .where(left_df.id == row["id"])
-        #                 .collect()[0]
-        #                 .asDict(recursive=True)
-        #             ),
-        #             "right": json.dumps(
-        #                 right_df.select("*")
-        #                 .where(right_df.id == row["id"])
-        #                 .collect()[0]
-        #                 .asDict(recursive=True)
-        #             ),
-        #         }
-        #     )
+        first = True
+        for difference in row["differences"]:
+            if first:
+                changes.append(
+                    {
+                        "id": row["id"],
+                        "diff": difference,
+                        "left": json.dumps(row["left"], ensure_ascii=False),
+                        "right": json.dumps(row["right"], ensure_ascii=False),
+                    }
+                )
+                first = False
+            else:
+                changes.append(
+                    {
+                        "id": "",
+                        "diff": difference,
+                        "left": "",
+                        "right": "",
+                    }
+                )
 
     if changes:
         with open(output, "w") as fd:
