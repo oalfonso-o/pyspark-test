@@ -1,9 +1,7 @@
 import logging
+
 import flatdict
-from gresearch.spark.diff import DiffOptions, diff_with_options
 import pyspark
-from pyspark.sql import functions as F
-from pyspark.sql import DataFrame
 
 from pyspark_diff.models import Difference
 
@@ -277,8 +275,6 @@ class WithoutSpark:
 
 class WithSpark:
     NESTED_FIELDS_SEP = "."
-    DIFF_COL_NAME = "diff"
-    CHANGES_COL_NAME = "changes"
 
     @classmethod
     def diff(
@@ -286,9 +282,8 @@ class WithSpark:
         left_df: pyspark.sql.DataFrame,
         right_df: pyspark.sql.DataFrame,
         id_fields: list,
-        order_by_ids: bool = True,
         columns: list = None,
-    ) -> DataFrame:
+    ) -> pyspark.rdd.RDD:
         for id_field in id_fields:
             if id_field not in left_df.columns or id_field not in left_df.columns:
                 raise ValueError(
@@ -296,50 +291,23 @@ class WithSpark:
                 )
 
         logger.info("1. Flattening dataframes...")
-        flat_left_df = cls._flat_df(left_df)
-        flat_right_df = cls._flat_df(right_df)
-        if order_by_ids:
-            flat_left_df = flat_left_df.orderBy(id_fields)
-            flat_right_df = flat_right_df.orderBy(id_fields)
 
-        left_cols = set(flat_left_df.columns)
-        right_cols = set(flat_right_df.columns)
-        if only_left_cols := left_cols - right_cols:
-            flat_right_df = flat_right_df.withColumns(
-                {c: F.lit(None) for c in only_left_cols}
-            )
-        if only_right_cols := right_cols - left_cols:
-            flat_left_df = flat_left_df.withColumns(
-                {c: F.lit(None) for c in only_right_cols}
-            )
+        left_rdd = left_df.rdd.map(cls._add_id_and_flat_row(id_fields))
+        right_rdd = right_df.rdd.map(cls._add_id_and_flat_row(id_fields))
 
-        logger.info("2. Comparing dataframes...")
-        options = DiffOptions().with_change_column(cls.CHANGES_COL_NAME)
-        diff_df = diff_with_options(
-            flat_left_df, flat_right_df, options, *id_fields
-        ).filter(F.col(cls.DIFF_COL_NAME) != DiffOptions.nochange_diff_value)
+        join_rdd = left_rdd.fullOuterJoin(right_rdd)
 
-        return diff_df
+        diff_rdd = join_rdd.filter(
+            lambda row: row[1][0]["flat_dict"] != row[1][1]["flat_dict"]
+        )
+        diff_rdd = diff_rdd.map(cls._compare_row)
+
+        return diff_rdd
 
     @classmethod
-    def _flat_df(cls, df):
-        rdd = df.rdd
-        rdd = rdd.map(cls._flat_row)
-
-        for sample_ratio in range(0, 10, 2):
-            sample_ratio = (sample_ratio + 2) / 10
-            try:
-                df = rdd.toDF(sampleRatio=sample_ratio)
-                break
-            except ValueError:
-                logger.warning(f"Couldn't infer schema with sampleRatio={sample_ratio}")
-        else:
-            raise ValueError("Couldn't infer schema to convert the RDD to DF")
-        return df
-
-    @classmethod
-    def _flat_row(cls, row):
-        """Convert a RDD row to a flat dict with flatdict.FlatterDict
+    def _add_id_and_flat_row(cls, id_fields):
+        """Convert a RDD row to a tuple(id, dict(flat_dict, original_dict)) with
+        flatdict.FlatterDict
 
         There's a bug with FlatterDict where empty lists/dicts are kept as empty FlatterDicts
         There are a couple of issues open:
@@ -349,15 +317,54 @@ class WithSpark:
         To workaround this we are going to detect when a field has not been parsed to it's original
         type and convert to an empty instance of its original type
         """
-        flatten_row = flatdict.FlatterDict(
-            row.asDict(recursive=True), cls.NESTED_FIELDS_SEP
-        )
-        flat_dict = {}
-        for k, v in dict(flatten_row).items():
-            if type(v) == flatdict.FlatterDict:
-                v = v.original_type()
-            flat_dict[k] = v
-        return flat_dict
+
+        def _fr(row):
+            flat_obj = flatdict.FlatterDict(
+                row.asDict(recursive=True), cls.NESTED_FIELDS_SEP
+            )
+            id_ = tuple((id_field, str(flat_obj[id_field])) for id_field in id_fields)
+            flat_dict = {}
+            for k, v in dict(flat_obj).items():
+                if type(v) == flatdict.FlatterDict:
+                    v = v.original_type()
+                flat_dict[k] = v
+            return id_, {"flat_dict": flat_dict, "original_dict": flat_obj.as_dict()}
+
+        return _fr
+
+    @staticmethod
+    def _compare_row(row):
+        """Each row is a tuple, the first item is the id, the second contains another tuple with
+        two dicts as result of the full outer join"""
+        id_ = row[0]
+        row_data = row[1]
+        left_data = row_data[0]
+        right_data = row_data[1]
+        left_flat_dict = left_data["flat_dict"]
+        right_flat_dict = right_data["flat_dict"]
+        left_dict = left_data["original_dict"]
+        right_dict = right_data["original_dict"]
+        differences = {
+            "id": id_,
+            "differences": [],
+            "left": left_dict,
+            "right": right_dict,
+        }
+        for k, v in left_flat_dict.items():
+            if k not in right_flat_dict:
+                differences["differences"].append(f"{k} missing in right")
+            elif right_flat_dict[k] != v:
+                l_type = type(v).__name__
+                r_type = type(right_flat_dict[k]).__name__
+                differences["differences"].append(
+                    f'"{k}" has different value. Left: <{l_type}>"{v}" '
+                    f'- Right: <{r_type}>"{right_flat_dict[k]}"'
+                )
+        # values present in both sides have been already compared
+        for k in right_flat_dict.keys():
+            if k not in left_flat_dict:
+                differences["differences"].append(f"{k} missing in left")
+        return differences
 
 
 def diff_objs(
@@ -446,9 +453,8 @@ def diff(
     left_df: pyspark.sql.DataFrame,
     right_df: pyspark.sql.DataFrame,
     id_fields: list,
-    order_by_ids: bool = True,
     columns: list = None,
-) -> DataFrame:
+) -> pyspark.rdd.RDD:
     """
     Used to check if two dataframes are same or not, returns a Dataframe with the differences
 
@@ -469,6 +475,5 @@ def diff(
         left_df=left_df,
         right_df=right_df,
         id_fields=id_fields,
-        order_by_ids=order_by_ids,
         columns=columns,
     )
