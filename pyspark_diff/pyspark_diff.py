@@ -297,9 +297,7 @@ class WithSpark:
 
         join_rdd = left_rdd.fullOuterJoin(right_rdd)
 
-        diff_rdd = join_rdd.filter(
-            lambda row: row[1][0]["flat_dict"] != row[1][1]["flat_dict"]
-        )
+        diff_rdd = join_rdd.filter(cls._filter_only_differences)
         diff_rdd = diff_rdd.map(cls._compare_row)
 
         return diff_rdd
@@ -333,6 +331,14 @@ class WithSpark:
         return _fr
 
     @staticmethod
+    def _filter_only_differences(row):
+        left = row[1][0]
+        right = row[1][1]
+        if (left and not right) or (right and not left):
+            return True
+        return left["flat_dict"] != right["flat_dict"]
+
+    @staticmethod
     def _compare_row(row):
         """Each row is a tuple, the first item is the id, the second contains another tuple with
         two dicts as result of the full outer join"""
@@ -340,10 +346,10 @@ class WithSpark:
         row_data = row[1]
         left_data = row_data[0]
         right_data = row_data[1]
-        left_flat_dict = left_data["flat_dict"]
-        right_flat_dict = right_data["flat_dict"]
-        left_dict = left_data["original_dict"]
-        right_dict = right_data["original_dict"]
+        left_flat_dict = left_data["flat_dict"] if left_data else {}
+        right_flat_dict = right_data["flat_dict"] if right_data else {}
+        left_dict = left_data["original_dict"] if left_data else {}
+        right_dict = right_data["original_dict"] if right_data else {}
         differences = {
             "id": id_,
             "differences": [],
