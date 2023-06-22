@@ -313,13 +313,11 @@ class WithSpark:
             flat_left_df = flat_left_df.withColumns(
                 {c: F.lit(None) for c in only_right_cols}
             )
-        import pudb
 
-        pu.db
         logger.info("2. Comparing dataframes...")
         options = DiffOptions().with_change_column(cls.CHANGES_COL_NAME)
         diff_df = diff_with_options(
-            flat_left_df, flat_right_df, options, id_fields
+            flat_left_df, flat_right_df, options, *id_fields
         ).filter(F.col(cls.DIFF_COL_NAME) != DiffOptions.nochange_diff_value)
 
         return diff_df

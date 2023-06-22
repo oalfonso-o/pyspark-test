@@ -55,7 +55,7 @@ data2 = [
         "list": ["list1", "list2"],
         "cpg1": {"cpg2": "2_value", "cpg3": {"cpg4": [{"cpg5": 2}, {"cpg6": 2}]}},
     }
-    for i in range(2)
+    for i in range(3, 0, -1)
 ]
 
 left_df = spark.createDataFrame(data1, schema=schema)
@@ -63,4 +63,4 @@ right_df = spark.createDataFrame(data2, schema=schema)
 
 df = diff(left_df, right_df, id_fields=["id"])
 
-df.show()
+df.where("diff == 'D'").show()
