@@ -298,7 +298,6 @@ class WithSpark:
         logger.info("1. Flattening dataframes...")
         flat_left_df = cls._flat_df(left_df)
         flat_right_df = cls._flat_df(right_df)
-
         if order_by_ids:
             flat_left_df = flat_left_df.orderBy(id_fields)
             flat_right_df = flat_right_df.orderBy(id_fields)
@@ -325,11 +324,8 @@ class WithSpark:
     @classmethod
     def _flat_df(cls, df):
         rdd = df.rdd
-        rdd = rdd.map(
-            lambda row: dict(
-                flatdict.FlatterDict(row.asDict(recursive=True), cls.NESTED_FIELDS_SEP)
-            )
-        )
+        rdd = rdd.map(cls._flat_row)
+
         for sample_ratio in range(0, 10, 2):
             sample_ratio = (sample_ratio + 2) / 10
             try:
@@ -340,6 +336,28 @@ class WithSpark:
         else:
             raise ValueError("Couldn't infer schema to convert the RDD to DF")
         return df
+
+    @classmethod
+    def _flat_row(cls, row):
+        """Convert a RDD row to a flat dict with flatdict.FlatterDict
+
+        There's a bug with FlatterDict where empty lists/dicts are kept as empty FlatterDicts
+        There are a couple of issues open:
+        https://github.com/gmr/flatdict/issues/54
+        https://github.com/gmr/flatdict/issues/43
+        With no answer.
+        To workaround this we are going to detect when a field has not been parsed to it's original
+        type and convert to an empty instance of its original type
+        """
+        flatten_row = flatdict.FlatterDict(
+            row.asDict(recursive=True), cls.NESTED_FIELDS_SEP
+        )
+        flat_dict = {}
+        for k, v in dict(flatten_row).items():
+            if type(v) == flatdict.FlatterDict:
+                v = v.original_type()
+            flat_dict[k] = v
+        return flat_dict
 
 
 def diff_objs(
