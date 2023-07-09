@@ -1,10 +1,13 @@
 from argparse import ArgumentParser
 import csv
 import json
+import logging
 
 from pyspark.sql import SparkSession
 
 from pyspark_diff import diff
+
+logger = logging.getLogger("example1")
 
 
 def process(input_left, input_right, output, ignore_columns):
@@ -58,10 +61,14 @@ def process(input_left, input_right, output, ignore_columns):
                 )
 
     if changes:
-        with open(output, "w") as fd:
-            writer = csv.DictWriter(fd, fieldnames=changes[0].keys())
-            writer.writeheader()
-            writer.writerows(changes)
+        if output:
+            with open(output, "w") as fd:
+                writer = csv.DictWriter(fd, fieldnames=changes[0].keys())
+                writer.writeheader()
+                writer.writerows(changes)
+            logger.info(f"Output stored in {output}")
+        else:
+            logger.info(f"Changes: {changes}")
 
 
 if __name__ == "__main__":

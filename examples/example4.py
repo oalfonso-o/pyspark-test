@@ -1,3 +1,5 @@
+import logging
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -7,6 +9,8 @@ from pyspark.sql.types import (
     IntegerType,
 )
 from pyspark_diff import diff
+
+logger = logging.getLogger("example4")
 
 spark = SparkSession.builder.appName(__name__).getOrCreate()
 
@@ -61,8 +65,6 @@ data2 = [
 left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
-df = diff(left_df, right_df, id_fields=["id"])
+rdd = diff(left_df, right_df, id_fields=["id"])
 
-only_left_df = df.where("diff == 'D'")
-only_right_df = df.where("diff == 'I'")
-change_df = df.where("diff == 'C'")
+logger.info(rdd.take(10))

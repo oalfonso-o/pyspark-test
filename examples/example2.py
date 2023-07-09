@@ -1,3 +1,5 @@
+import logging
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -7,6 +9,8 @@ from pyspark.sql.types import (
     IntegerType,
 )
 from pyspark_diff import diff
+
+logger = logging.getLogger("example2")
 
 spark = SparkSession.builder.appName(__name__).getOrCreate()
 
@@ -41,13 +45,16 @@ schema = StructType(
         ),
     ]
 )
+
+NUM_ITEMS = 1_000
+
 data1 = [
     {
         "id": i,
         "list": ["list1", "list2"],
         "cpg1": {"cpg2": "2_value", "cpg3": {"cpg4": [{"cpg5": 1}]}},
     }
-    for i in range(1_000_000)
+    for i in range(NUM_ITEMS)
 ]
 data2 = [
     {
@@ -55,13 +62,15 @@ data2 = [
         "list": ["list1", "list2"],
         "cpg1": {"cpg2": "2_value", "cpg3": {"cpg4": [{"cpg5": 2}, {"cpg6": 2}]}},
     }
-    for i in range(1_000_000)
+    for i in range(NUM_ITEMS)
 ]
+
+logger.info(f"Datasets with {NUM_ITEMS} items...")
 
 left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
+# join is very expensive with 1m items, faster in streaming without spark for now
+rdd = diff(left_df, right_df, id_fields=["id"])
 
-df = diff(left_df, right_df, id_field="id")
-
-df.show()
+logger.info(rdd.take(100))

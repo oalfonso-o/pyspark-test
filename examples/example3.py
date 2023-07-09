@@ -1,7 +1,10 @@
-import flatdict
 import json
+import logging
 
+import flatdict
 from pyspark.sql import SparkSession
+
+logger = logging.getLogger("example3")
 
 spark = SparkSession.builder.appName(__name__).getOrCreate()
 sc = spark.sparkContext
@@ -14,6 +17,11 @@ data = [
     }
     for i in range(10)
 ]
+
+logger.info(
+    "Tests with writing and reading jsons to DF and RDDs and flattening the data, no diffs here"
+)
+
 file_data = "\n".join([json.dumps(r) for r in data])
 tmpfile = "tmpdata.json"
 
@@ -25,3 +33,5 @@ rdd = df.rdd
 rdd = rdd.map(lambda row: dict(flatdict.FlatterDict(row.asDict(recursive=True), ".")))
 df = rdd.toDF()
 df = df.orderBy(["id"])
+
+df.show()

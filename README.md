@@ -1,6 +1,6 @@
 # pyspark_diff
 
-You have two ways to get the differences, you can get a list of Python pyspark_diff.Difference objects or getting a new dataframe with one row per each difference.
+Give two dataframes as input and get back the list of the differences.
 
 Example data:
 

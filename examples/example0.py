@@ -1,9 +1,12 @@
 from argparse import ArgumentParser
 import csv
+import logging
 
 from pyspark.sql import SparkSession
 
 from pyspark_diff import diff_objs
+
+logger = logging.getLogger("example0")
 
 
 def process(input_left, input_right, output):
@@ -23,10 +26,14 @@ def process(input_left, input_right, output):
 
     if differences:
         differences = [dict(d) for d in differences]
-        with open(output, "w") as fd:
-            writer = csv.DictWriter(fd, fieldnames=differences[0].keys())
-            writer.writeheader()
-            writer.writerows(differences)
+        if output:
+            with open(output, "w") as fd:
+                writer = csv.DictWriter(fd, fieldnames=differences[0].keys())
+                writer.writeheader()
+                writer.writerows(differences)
+            logger.info(f"Results stored in {output}")
+        else:
+            logger.info(f"Differences: {differences}")
 
 
 if __name__ == "__main__":

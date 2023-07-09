@@ -9,7 +9,7 @@ from pyspark_diff.models import Difference
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s: %(message)s", level="INFO"
 )
-logger = logging.getLogger("pyspark_test")
+logger = logging.getLogger("pyspark_diff")
 
 REASON_DIFF_INPUT_TYPE = "diff_input_type"
 REASON_DIFF_COLUMNS = "diff_columns"
