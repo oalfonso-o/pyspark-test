@@ -152,6 +152,7 @@ class WithoutSpark:
         order_by: list = None,
         columns: list = None,
         sorting_keys: dict = None,
+        ignore_columns: list = None,
     ) -> list[Difference]:
         differences = []
 
@@ -179,6 +180,8 @@ class WithoutSpark:
                     columns.append(id_field)
 
             for column_name in columns:
+                if ignore_columns and column_name in ignore_columns:
+                    continue
                 left_row = left_df_list[row_index][column_name]
                 right_row = right_df_list[row_index][column_name]
                 diff = cls._diff_row(
@@ -188,6 +191,7 @@ class WithoutSpark:
                     row_id=row_id,
                     recursive=recursive,
                     sorting_keys=sorting_keys,
+                    ignore_columns=ignore_columns,
                 )
                 if diff:
                     differences.extend(diff)
@@ -209,6 +213,7 @@ class WithoutSpark:
         recursive,
         column_name_parent: str = "",
         sorting_keys: dict = None,
+        ignore_columns: list = None,
     ) -> list[Difference]:
         differences = []
         if isinstance(left_row, pyspark.sql.types.Row):
@@ -230,6 +235,8 @@ class WithoutSpark:
             # Iterate dict recursively if requested
             elif recursive and isinstance(left_row, dict):
                 for key in left_row:
+                    if ignore_columns and key in ignore_columns:
+                        continue
                     differences.extend(
                         cls._diff_row(
                             left_row=left_row[key],
@@ -241,6 +248,7 @@ class WithoutSpark:
                                 filter(bool, [column_name_parent, column_name])
                             ),
                             sorting_keys=sorting_keys,
+                            ignore_columns=ignore_columns,
                         )
                     )
             # Iterate list recursively if requested
@@ -264,6 +272,7 @@ class WithoutSpark:
                                     filter(bool, [column_name_parent, column_name])
                                 ),
                                 sorting_keys=sorting_keys,
+                                ignore_columns=ignore_columns,
                             )
                         )
             else:
@@ -283,6 +292,7 @@ class WithSpark:
         right_df: pyspark.sql.DataFrame,
         id_fields: list,
         columns: list = None,
+        ignore_columns: list = None,
     ) -> pyspark.rdd.RDD:
         for id_field in id_fields:
             if id_field not in left_df.columns or id_field not in left_df.columns:
@@ -290,15 +300,21 @@ class WithSpark:
                     f"id_field {id_field} not present in the input dataframes"
                 )
 
-        logger.info("1. Flattening dataframes...")
-
+        logger.info("1. Flattening left dataframe...")
         left_rdd = left_df.rdd.map(cls._add_id_and_flat_row(id_fields))
+        x = left_rdd.collect()
+        del x
+        logger.info("2. Flattening right dataframe...")
         right_rdd = right_df.rdd.map(cls._add_id_and_flat_row(id_fields))
+        right_rdd.collect()
 
+        logger.info("3. Join...")
         join_rdd = left_rdd.fullOuterJoin(right_rdd)
+        join_rdd.collect()
 
+        # TODO: merge filter and map to reduce total time
         diff_rdd = join_rdd.filter(cls._filter_only_differences)
-        diff_rdd = diff_rdd.map(cls._compare_row)
+        diff_rdd = diff_rdd.map(cls._compare_row(ignore_columns))
 
         return diff_rdd
 
@@ -316,7 +332,7 @@ class WithSpark:
         type and convert to an empty instance of its original type
         """
 
-        def _fr(row):
+        def _aiafr(row):
             flat_obj = flatdict.FlatterDict(
                 row.asDict(recursive=True), cls.NESTED_FIELDS_SEP
             )
@@ -328,7 +344,7 @@ class WithSpark:
                 flat_dict[k] = v
             return id_, {"flat_dict": flat_dict, "original_dict": flat_obj.as_dict()}
 
-        return _fr
+        return _aiafr
 
     @staticmethod
     def _filter_only_differences(row):
@@ -338,39 +354,47 @@ class WithSpark:
             return True
         return left["flat_dict"] != right["flat_dict"]
 
-    @staticmethod
-    def _compare_row(row):
+    @classmethod
+    def _compare_row(cls, ignore_columns: list = None):
         """Each row is a tuple, the first item is the id, the second contains another tuple with
         two dicts as result of the full outer join"""
-        id_ = row[0]
-        row_data = row[1]
-        left_data = row_data[0]
-        right_data = row_data[1]
-        left_flat_dict = left_data["flat_dict"] if left_data else {}
-        right_flat_dict = right_data["flat_dict"] if right_data else {}
-        left_dict = left_data["original_dict"] if left_data else {}
-        right_dict = right_data["original_dict"] if right_data else {}
-        differences = {
-            "id": id_,
-            "differences": [],
-            "left": left_dict,
-            "right": right_dict,
-        }
-        for k, v in left_flat_dict.items():
-            if k not in right_flat_dict:
-                differences["differences"].append(f"{k} missing in right")
-            elif right_flat_dict[k] != v:
-                l_type = type(v).__name__
-                r_type = type(right_flat_dict[k]).__name__
-                differences["differences"].append(
-                    f'"{k}" has different value. Left: <{l_type}>"{v}" '
-                    f'- Right: <{r_type}>"{right_flat_dict[k]}"'
-                )
-        # values present in both sides have been already compared
-        for k in right_flat_dict.keys():
-            if k not in left_flat_dict:
-                differences["differences"].append(f"{k} missing in left")
-        return differences
+
+        def _cr(row):
+            id_ = row[0]
+            row_data = row[1]
+            left_data = row_data[0]
+            right_data = row_data[1]
+            left_flat_dict = left_data["flat_dict"] if left_data else {}
+            right_flat_dict = right_data["flat_dict"] if right_data else {}
+            left_dict = left_data["original_dict"] if left_data else {}
+            right_dict = right_data["original_dict"] if right_data else {}
+            differences = {
+                "id": id_,
+                "differences": [],
+                "left": left_dict,
+                "right": right_dict,
+            }
+            for k, v in left_flat_dict.items():
+                if ignore_columns:
+                    last_child_field_name = k.split(cls.NESTED_FIELDS_SEP)[-1]
+                    if last_child_field_name in ignore_columns:
+                        continue
+                if k not in right_flat_dict:
+                    differences["differences"].append(f"{k} missing in right")
+                elif right_flat_dict[k] != v:
+                    l_type = type(v).__name__
+                    r_type = type(right_flat_dict[k]).__name__
+                    differences["differences"].append(
+                        f'"{k}" has different value. Left: <{l_type}>"{v}" '
+                        f'- Right: <{r_type}>"{right_flat_dict[k]}"'
+                    )
+            # values present in both sides have been already compared
+            for k in right_flat_dict.keys():
+                if k not in left_flat_dict:
+                    differences["differences"].append(f"{k} missing in left")
+            return differences
+
+        return _cr
 
 
 def diff_objs(
@@ -383,6 +407,7 @@ def diff_objs(
     skip_n_first_rows: int = 0,
     order_by: list = None,
     sorting_keys: dict = None,
+    ignore_columns: list = None,
 ) -> list[Difference]:
     """
     Used to test if two dataframes are same or not
@@ -406,6 +431,7 @@ def diff_objs(
             Notice that this is not going to change the order of the dataset, only the order of the
             values of an specific column.
             Defaults to None.
+        ignore_columns (list, optional): Name of columns that will be ignored. Defaults to None.
 
     Returns:
         A list of the differences: objects of type pyspark_diff.Difference
@@ -450,6 +476,7 @@ def diff_objs(
         order_by=order_by,
         columns=columns,
         sorting_keys=sorting_keys,
+        ignore_columns=ignore_columns,
     )
 
     return differences
@@ -460,6 +487,7 @@ def diff(
     right_df: pyspark.sql.DataFrame,
     id_fields: list,
     columns: list = None,
+    ignore_columns: list = None,
 ) -> pyspark.rdd.RDD:
     """
     Used to check if two dataframes are same or not, returns a Dataframe with the differences
@@ -472,6 +500,7 @@ def diff(
         order_by_ids (bool, optional): Order the dataframes by the id_fields cols before comparing.
             The order of the fields is the one provided in the id_fields param. Defaults to True.
         columns (list, optional): Compare only these columns. Defaults to None.
+        ignore_columns (list, optional): Name of columns that will be ignored. Defaults to None.
 
     Returns:
         pyspark.sql.DataFrame with the differences
@@ -482,4 +511,5 @@ def diff(
         right_df=right_df,
         id_fields=id_fields,
         columns=columns,
+        ignore_columns=ignore_columns,
     )

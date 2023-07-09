@@ -7,28 +7,31 @@ from pyspark.sql import SparkSession
 from pyspark_diff import diff
 
 
-def process(input_left, input_right, output):
-    spark = SparkSession.builder.appName(__name__).getOrCreate()
+def process(input_left, input_right, output, ignore_columns):
+    spark = (
+        SparkSession.builder.config("spark.driver.memory", "10g")
+        .appName(__name__)
+        .getOrCreate()
+    )
 
-    left_df = spark.read.json(input_left)
-    right_df = spark.read.json(input_right)
+    left_df = spark.createDataFrame(
+        [
+            {"id": 1, "title": "song1", "a": "b"},
+            {"id": 2, "title": "song2", "a": "b"},
+            {"id": 3, "title": "song3", "a": "b"},
+        ]
+    )
+    right_df = spark.createDataFrame(
+        [
+            {"id": 1, "title": "song1", "a": 123},
+            {"id": 2, "title": "song2", "a": "b"},
+            {"id": 3, "title": "song3", "a": "b"},
+        ]
+    )
 
-    # left_df = spark.createDataFrame(
-    #     [
-    #         {"id": 1, "title": "song1", "a": "b"},
-    #         {"id": 2, "title": "song2", "a": "b"},
-    #         {"id": 3, "title": "song3", "a": "b"},
-    #     ]
-    # )
-    # right_df = spark.createDataFrame(
-    #     [
-    #         {"id": 1, "title": "song1", "a": 123},
-    #         {"id": 2, "title": "song2", "a": "b"},
-    #         {"id": 3, "title": "song3", "a": "b"},
-    #     ]
-    # )
-
-    rdd = diff(left_df, right_df, id_fields=["id", "title"])
+    rdd = diff(
+        left_df, right_df, id_fields=["id", "title"], ignore_columns=ignore_columns
+    )
 
     changes = []
     for row in rdd.collect():
@@ -66,9 +69,11 @@ if __name__ == "__main__":
     parser.add_argument("-l", "--input-left-json-filepath")
     parser.add_argument("-r", "--input-right-json-filepath")
     parser.add_argument("-o", "--output-differences-csv-filepath")
+    parser.add_argument("-i", "--ignore-columns", nargs="+")
     args = parser.parse_args()
     process(
         args.input_left_json_filepath,
         args.input_right_json_filepath,
         args.output_differences_csv_filepath,
+        args.ignore_columns,
     )

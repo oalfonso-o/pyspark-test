@@ -6,7 +6,7 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
 )
-from pyspark_diff import diff_df
+from pyspark_diff import diff
 
 spark = SparkSession.builder.appName(__name__).getOrCreate()
 
@@ -62,6 +62,6 @@ left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
 
-df = diff_df(left_df, right_df, id_field="id")
+df = diff(left_df, right_df, id_field="id")
 
 df.show()
