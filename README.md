@@ -1,6 +1,6 @@
 # pyspark_diff
 
-Give two dataframes as input and get back the list of the differences.
+Given two dataframes get the list of the differences in all the nested fields, knowing the position of the array items where a value changes and the key of the structs of the value that is different.
 
 Example data:
 
@@ -18,106 +18,21 @@ Example data:
 {"id": 3, "values_list": ["a", "b"], "values_dict": {"a": "bdiff"}}
 ```
 
-## diff_df
-Returns a new dataframe with the differences between two PySpark dataframes. Example:
-
-``` python
-from pyspark.sql import SparkSession
-from pyspark_diff import diff_df
-
-spark = SparkSession.builder.appName(__name__).getOrCreate()
-
-df1 = spark.read.json("/tmp/data1.json")
-df2 = spark.read.json("/tmp/data2.json")
-
-differences = diff_df(
-    left_df=df1,
-    right_df=df2,
-    id_field="id",
-)
-```
-
-If we do a show of the dataframe we see this:
-```
->>> differences.show()
-+----+----------------+---+-------------------+--------------------+-------------------+--------------------+-------------------+--------------------+
-|diff|         changes| id|left_values_list[0]|right_values_list[0]|left_values_list[1]|right_values_list[1]|left_values_dict__a|right_values_dict__a|
-+----+----------------+---+-------------------+--------------------+-------------------+--------------------+-------------------+--------------------+
-|   C|[values_list[1]]|  2|                  a|                   a|                  b|               bdiff|                  b|                   b|
-|   C|[values_dict__a]|  3|                  a|                   a|                  b|                   b|                  b|               bdiff|
-+----+----------------+---+-------------------+--------------------+-------------------+--------------------+-------------------+--------------------+
-```
-
-The dataframe will contain the diff column informing which type of difference is, the list of fields which changed for that row, the id, and then all the input columns flattened with it's corresponding `left_*` and `right_*` prefix to be able to compare.
-
-The nested fields are flattened following this system:
-- arrays -> will have the name of the field + [array_index]. For example: `artists[0]`
-- structs -> will have the name of the field + double underscore + the name of the key. For example: `artist__name`
-
-Then we can use this data as we wish, in the `examples/example1.py` we are adding the original row and formatting the column names for a custom csv output. Example:
-```
-python examples/example1.py -l /tmp/data1.json -r /tmp/data2.json -o differences.csv
-```
-Running this example1.py we will get the dataframe, parse the output and write a new csv with the differences which will look like this:
-|id |diff|key           |left_value|right_value|left                                                           |right                                                              |
-|---|----|--------------|----------|-----------|---------------------------------------------------------------|-------------------------------------------------------------------|
-|2  |C   |values_list[1]|b         |bdiff      |{"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "b"]}|{"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "bdiff"]}|
-|3  |C   |values_dict__a|b         |bdiff      |{"id": 3, "values_dict": {"a": "b"}, "values_list": ["a", "b"]}|{"id": 3, "values_dict": {"a": "bdiff"}, "values_list": ["a", "b"]}|
-
-The output informs the ID of the row that contains a difference, also which is the key (useful for highly nested data models), value in each field and also the original row for debugging.
-
-You can run also `examples/example2.py` which doesn't requires any input file but processes 1m rows in each sample dataframe:
-```
-python examples/example2.py
-```
-And you will see:
-```
-+----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
-|diff|             changes|    id|left_list[0]|right_list[0]|left_list[1]|right_list[1]|left_cpg1__cpg2|right_cpg1__cpg2|left_cpg1__cpg3__cpg4[1]__cpg5|right_cpg1__cpg3__cpg4[1]__cpg5|left_cpg1__cpg3__cpg4[0]__cpg5|right_cpg1__cpg3__cpg4[0]__cpg5|
-+----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
-|   C|[cpg1__cpg3__cpg4...|  1000|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...| 10000|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100005|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...| 10001|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100011|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100032|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100033|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100034|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100041|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100052|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100058|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100059|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100065|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100073|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100077|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100104|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100105|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100117|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100118|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-|   C|[cpg1__cpg3__cpg4...|100122|       list1|        list1|       list2|        list2|        2_value|         2_value|                          null|                           null|                             1|                              2|
-+----+--------------------+------+------------+-------------+------------+-------------+---------------+----------------+------------------------------+-------------------------------+------------------------------+-------------------------------+
-only showing top 20 rows
-```
-There's one difference in each row, which is the same for all rows.
-
-
-## diff_objs
+## diff
 Returns a list of differences between two PySpark dataframes.
-
-It's better to use the `diff_df` as it processes everything with spark dataframes and it's more optimal. This method first performs a `collect` on both dataframes and does all the comparisons using plain python after loading everything into memory. This method can be interesting for custom processing but is not suitable with large datasets if we don't have enough memory available. Also it can be slower.
 
 Example:
 
 ``` python
 from pyspark.sql import SparkSession
-from pyspark_diff import diff_objs
+from pyspark_diff import diff
 
 spark = SparkSession.builder.appName(__name__).getOrCreate()
 
 df1 = spark.read.json("/tmp/data1.json")
 df2 = spark.read.json("/tmp/data2.json")
 
-differences = diff_objs(
+differences = diff(
     left_df=df1,
     right_df=df2,
     id_field="id",
@@ -147,7 +62,66 @@ And `differences` look like this:
 ]
 ```
 
-The output is not exactly the same and this method won't be continued as it's preferred to use the `diff_df` method.
+We can see a difference in the row `2`(row_id) in the element with position `1` (column_name) of the field `values_list` (column_name_parent) knowing the values of:
+
+- left value: "b"
+- right value: "bdiff"
+
+In the left dataframe we had a `b` and in the right dataframe we have a `bdiff`, knowing exactly the position of the array that changes.
+
+The same happens in the second difference but with an struct.
+
+## diff_wip
+Named as *WIP* to make it clear that is still not ready.
+The idea is to check the differences using Spark, so making it faster and more efficient but so far all the tests have been:
+- slower than the `diff`
+- have more bugs (no bugs found in `diff`)
+
+The idea is to eventually make this method the default `diff`.
+
+Returns a new RDD with the differences between two PySpark dataframes. Example:
+
+``` python
+from pyspark.sql import SparkSession
+from pyspark_diff import diff_wip
+
+spark = SparkSession.builder.appName(__name__).getOrCreate()
+
+df1 = spark.read.json("/tmp/data1.json")
+df2 = spark.read.json("/tmp/data2.json")
+
+differences = diff_wip(
+    left_df=df1,
+    right_df=df2,
+    id_fields=["id"],
+)
+```
+
+If we do a `take` of the RDD we get::
+``` python
+>>> differences.take(2)
+[
+    {
+        "id": (("id", "2"),),
+        "differences": [
+            '"values_list.1" has different value. Left: <str>"b" - Right: <str>"bdiff"'
+        ],
+        "left": {"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "b"]},
+        "right": {"id": 2, "values_dict": {"a": "b"}, "values_list": ["a", "bdiff"]},
+    },
+    {
+        "id": (("id", "3"),),
+        "differences": [
+            '"values_dict.a" has different value. Left: <str>"b" - Right: <str>"bdiff"'
+        ],
+        "left": {"id": 3, "values_dict": {"a": "b"}, "values_list": ["a", "b"]},
+        "right": {"id": 3, "values_dict": {"a": "bdiff"}, "values_list": ["a", "b"]},
+    },
+]
+```
+
+With this method we try to be more verbose than with `diff` as we are gouping the differences per each id in the `differences` list, but it's still not clear which is the best way to extract the diff.
+
 
 # Documentation
 
@@ -156,8 +130,17 @@ For parameters documentation for now check directly the method as it's still cha
 https://github.com/oalfonso-o/pyspark_diff/blob/main/pyspark_diff/pyspark_diff.py
 
 
+# Similar projects
+
+In case this code is not solving your problem maybe other tools can do it, they have been reviewed while implementing this code:
+
+- Datacompy: https://github.com/capitalone/datacompy
+- G-Research: spark-expension.diff: https://github.com/G-Research/spark-extension/blob/master/DIFF.md
+
+Both tools are great but I couldn't find in them the level of flexibility to detail in depth which is the difference in nested fields.
+
 -----
 
 Note:
 
-Initially forked from https://github.com/debugger24/pyspark-test as this repo was intended to add minor features and open a pull request to the original repo but now the idea of this project is not testing pyspark and more about extracting a diff from the pyspark dataframes. So the purpose changed from testing to debugging.
+Initially forked from https://github.com/debugger24/pyspark-test as this repo was intended to add minor features and open a pull request to the original repo but now the idea of this project is not testing pyspark and more about extracting a diff from the pyspark dataframes nested fields.

@@ -397,7 +397,7 @@ class WithSpark:
         return _cr
 
 
-def diff_objs(
+def diff(
     left_df: pyspark.sql.DataFrame,
     right_df: pyspark.sql.DataFrame,
     id_field: str = None,
@@ -482,7 +482,7 @@ def diff_objs(
     return differences
 
 
-def diff(
+def diff_wip(
     left_df: pyspark.sql.DataFrame,
     right_df: pyspark.sql.DataFrame,
     id_fields: list,
@@ -490,7 +490,7 @@ def diff(
     ignore_columns: list = None,
 ) -> pyspark.rdd.RDD:
     """
-    Used to check if two dataframes are same or not, returns a Dataframe with the differences
+    [WIP] Used to check if two dataframes are same or not with Spark, returns a RDD
 
     Args:
         left_df (pyspark.sql.DataFrame): Left Dataframe. Required

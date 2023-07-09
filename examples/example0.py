@@ -4,7 +4,7 @@ import logging
 
 from pyspark.sql import SparkSession
 
-from pyspark_diff import diff_objs
+from pyspark_diff import diff
 
 logger = logging.getLogger("example0")
 
@@ -15,7 +15,7 @@ def process(input_left, input_right, output):
     left_df = spark.read.json(input_left)
     right_df = spark.read.json(input_right)
 
-    differences = diff_objs(
+    differences = diff(
         left_df,
         right_df,
         id_field="id",

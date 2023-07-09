@@ -5,7 +5,7 @@ import logging
 
 from pyspark.sql import SparkSession
 
-from pyspark_diff import diff
+from pyspark_diff import diff_wip
 
 logger = logging.getLogger("example1")
 
@@ -32,7 +32,7 @@ def process(input_left, input_right, output, ignore_columns):
         ]
     )
 
-    rdd = diff(
+    rdd = diff_wip(
         left_df, right_df, id_fields=["id", "title"], ignore_columns=ignore_columns
     )
 

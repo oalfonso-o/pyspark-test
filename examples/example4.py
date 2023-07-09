@@ -8,7 +8,7 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
 )
-from pyspark_diff import diff
+from pyspark_diff import diff_wip
 
 logger = logging.getLogger("example4")
 
@@ -65,6 +65,6 @@ data2 = [
 left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
-rdd = diff(left_df, right_df, id_fields=["id"])
+rdd = diff_wip(left_df, right_df, id_fields=["id"])
 
 logger.info(rdd.take(10))

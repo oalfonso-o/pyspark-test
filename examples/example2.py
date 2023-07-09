@@ -8,7 +8,7 @@ from pyspark.sql.types import (
     ArrayType,
     IntegerType,
 )
-from pyspark_diff import diff
+from pyspark_diff import diff_wip
 
 logger = logging.getLogger("example2")
 
@@ -71,6 +71,6 @@ left_df = spark.createDataFrame(data1, schema=schema)
 right_df = spark.createDataFrame(data2, schema=schema)
 
 # join is very expensive with 1m items, faster in streaming without spark for now
-rdd = diff(left_df, right_df, id_fields=["id"])
+rdd = diff_wip(left_df, right_df, id_fields=["id"])
 
 logger.info(rdd.take(100))
